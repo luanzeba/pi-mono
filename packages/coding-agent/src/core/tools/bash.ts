@@ -16,9 +16,14 @@ function getTempFilePath(): string {
 	return join(tmpdir(), `pi-bash-${id}.log`);
 }
 
+/** Default timeout for bash commands in seconds. Prevents the agent from hanging indefinitely on long-running processes. */
+const DEFAULT_TIMEOUT_SECS = 120;
+
 const bashSchema = Type.Object({
 	command: Type.String({ description: "Bash command to execute" }),
-	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
+	timeout: Type.Optional(
+		Type.Number({ description: `Timeout in seconds (default: ${DEFAULT_TIMEOUT_SECS}). Set to 0 for no timeout.` }),
+	),
 });
 
 export type BashToolInput = Static<typeof bashSchema>;
@@ -171,7 +176,7 @@ export function createBashTool(cwd: string, options?: BashToolOptions): AgentToo
 	return {
 		name: "bash",
 		label: "bash",
-		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
+		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds (default: ${DEFAULT_TIMEOUT_SECS}s). Set timeout to 0 for no timeout.`,
 		parameters: bashSchema,
 		execute: async (
 			_toolCallId: string,
@@ -182,6 +187,10 @@ export function createBashTool(cwd: string, options?: BashToolOptions): AgentToo
 			// Apply command prefix if configured (e.g., "shopt -s expand_aliases" for alias support)
 			const resolvedCommand = commandPrefix ? `${commandPrefix}\n${command}` : command;
 			const spawnContext = resolveSpawnContext(resolvedCommand, cwd, spawnHook);
+
+			// Apply default timeout if the LLM didn't specify one.
+			// timeout:0 explicitly means "no timeout" (opt-out).
+			const effectiveTimeout = timeout === 0 ? undefined : (timeout ?? DEFAULT_TIMEOUT_SECS);
 
 			return new Promise((resolve, reject) => {
 				// We'll stream to a temp file if output gets large
@@ -241,7 +250,7 @@ export function createBashTool(cwd: string, options?: BashToolOptions): AgentToo
 				ops.exec(spawnContext.command, spawnContext.cwd, {
 					onData: handleData,
 					signal,
-					timeout,
+					timeout: effectiveTimeout,
 					env: spawnContext.env,
 				})
 					.then(({ exitCode }) => {

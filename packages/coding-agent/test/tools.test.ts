@@ -324,6 +324,31 @@ describe("Coding Agent Tools", () => {
 			const result = await bashWithoutPrefix.execute("test-prefix-3", { command: "echo no-prefix" });
 			expect(getTextOutput(result).trim()).toBe("no-prefix");
 		});
+
+		it("should complete fast commands normally with default timeout", async () => {
+			const bashWithDefaults = createBashTool(testDir);
+
+			// A fast command should succeed — the default 120s timeout doesn't interfere
+			const result = await bashWithDefaults.execute("test-default-timeout-ok", { command: "echo works" });
+			expect(getTextOutput(result).trim()).toBe("works");
+		});
+
+		it("should allow disabling timeout with timeout:0", async () => {
+			const bashWithDefaults = createBashTool(testDir);
+
+			// sleep 1 with timeout:0 should complete normally (no default timeout applied)
+			const result = await bashWithDefaults.execute("test-timeout-zero", { command: "sleep 1", timeout: 0 });
+			expect(getTextOutput(result)).toBeDefined();
+		});
+
+		it("should use explicit timeout over default", async () => {
+			const bashWithDefaults = createBashTool(testDir);
+
+			// Explicit 1s timeout should fire before the 120s default
+			await expect(
+				bashWithDefaults.execute("test-explicit-timeout", { command: "sleep 300", timeout: 1 }),
+			).rejects.toThrow(/timed out/i);
+		});
 	});
 
 	describe("grep tool", () => {
